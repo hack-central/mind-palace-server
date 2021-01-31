@@ -8,8 +8,6 @@ const path = require("path");
 router.post("/", async (req, res) => {
   const { body, file } = req;
 
-  consola.info(body);
-
   try {
     const keyFilename = path.join(__dirname, "/../keyfile.json");
     const langClient = new language.LanguageServiceClient({ keyFilename });
@@ -23,19 +21,16 @@ router.post("/", async (req, res) => {
       type: "PLAIN_TEXT",
     };
 
-    const [classification] = await langClient.classifyText({ document });
     const [sentimentResult] = await langClient.analyzeSentiment({ document });
-
     const sentiment = sentimentResult.documentSentiment;
+    consola.info(`Sentiment analysis received`);
+
+    const [classification] = await langClient.classifyText({ document });
     const keyPhrases = [];
-
-    consola.info(
-      `[*] Document received: ${JSON.stringify(classification.categories)}`
-    );
-
     classification.categories.forEach((category) => {
       keyPhrases.push(category.name);
     });
+    consola.info(`Categories document received`);
 
     const request = {
       input: { text: body.data },
@@ -44,9 +39,9 @@ router.post("/", async (req, res) => {
       // select the type of audio encoding
       audioConfig: { audioEncoding: "MP3" },
     };
-
     const [audioResponse] = await text2SpeechClient.synthesizeSpeech(request);
     const audioContent = audioResponse.audioContent;
+    consola.info(`Audio document received`);
 
     const [visionResponse] = await visionClient.faceDetection(file.buffer);
     const {
@@ -57,24 +52,21 @@ router.post("/", async (req, res) => {
       surpriseLikelihood,
       blurredLikelihood,
     } = visionResponse.faceAnnotations[0];
+    consola.info(`FaceInfo received`);
 
-    consola.info(`[*] FaceInfo received: ${JSON.stringify(faceInfo)}`);
-
-    res
-      .status(200)
-      .json({
-        keyPhrases,
-        sentiment,
-        audioContent,
-        face: {
-          joyLikelihood,
-          sorrowLikelihood,
-          angerLikelihood,
-          headwearLikelihood,
-          surpriseLikelihood,
-          blurredLikelihood,
-        },
-      });
+    res.status(200).json({
+      keyPhrases,
+      sentiment,
+      audioContent,
+      face: {
+        joyLikelihood,
+        sorrowLikelihood,
+        angerLikelihood,
+        headwearLikelihood,
+        surpriseLikelihood,
+        blurredLikelihood,
+      },
+    });
   } catch (error) {
     consola.error(error);
     res.status(500).send("internal error occured");
