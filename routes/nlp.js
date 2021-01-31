@@ -5,6 +5,17 @@ const vision = require("@google-cloud/vision");
 const consola = require("consola");
 const path = require("path");
 
+const products = require("../productMap");
+
+const Likelihood = {
+  UNKNOWN: 0,
+  VERY_UNLIKELY: 1,
+  UNLIKELY: 2,
+  POSSIBLE: 3,
+  LIKELY: 4,
+  VERY_LIKELY: 5,
+};
+
 router.post("/", async (req, res) => {
   const { body, file } = req;
 
@@ -28,7 +39,8 @@ router.post("/", async (req, res) => {
     const [classification] = await langClient.classifyText({ document });
     const keyPhrases = [];
     classification.categories.forEach((category) => {
-      keyPhrases.push(category.name);
+      const items = category.name.split("/").filter((e) => e !== "");
+      keyPhrases.push(...items);
     });
     consola.info(`Categories document received`);
 
@@ -43,29 +55,73 @@ router.post("/", async (req, res) => {
     const audioContent = audioResponse.audioContent;
     consola.info(`Audio document received`);
 
-    const [visionResponse] = await visionClient.faceDetection(file.buffer);
-    const {
-      joyLikelihood,
-      sorrowLikelihood,
-      angerLikelihood,
-      headwearLikelihood,
-      surpriseLikelihood,
-      blurredLikelihood,
-    } = visionResponse.faceAnnotations[0];
-    consola.info(`FaceInfo received`);
+    const tags = [];
+    const recommendedProducts = [];
+    let mood = {};
 
-    res.status(200).json({
-      keyPhrases,
-      sentiment,
-      audioContent,
-      face: {
+    if (file) {
+      const [visionResponse] = await visionClient.faceDetection(file.buffer);
+      const {
         joyLikelihood,
         sorrowLikelihood,
         angerLikelihood,
         headwearLikelihood,
         surpriseLikelihood,
         blurredLikelihood,
-      },
+      } = visionResponse.faceAnnotations[0];
+      consola.info(`FaceInfo received`);
+
+      mood = {
+        joyLikelihood,
+        sorrowLikelihood,
+        angerLikelihood,
+        headwearLikelihood,
+        surpriseLikelihood,
+        blurredLikelihood,
+      };
+
+      const face = {
+        joyLikelihood: Likelihood[joyLikelihood],
+        sorrowLikelihood: Likelihood[sorrowLikelihood],
+        angerLikelihood: Likelihood[angerLikelihood],
+        headwearLikelihood: Likelihood[headwearLikelihood],
+        surpriseLikelihood: Likelihood[surpriseLikelihood],
+        blurredLikelihood: Likelihood[blurredLikelihood],
+      };
+
+      for (const emo of Object.keys(face)) {
+        if (face[emo] >= 3) {
+          tags.push(emo);
+        }
+      }
+    } else {
+      if (sentiment.score <= -0.25) {
+        // NEGATIVE
+        tags.push("sorrowLikelihood", "angerLikelihood");
+      } else if (sentiment.score <= 0.25) {
+        // NEUTRAL
+        tags.push("headwearLikelihood", "blurredLikelihood");
+      } else {
+        // POSITIVE
+        tags.push("joyLikelihood", "surpriseLikelihood");
+      }
+    }
+
+    for (const product of products) {
+      for (const tag of tags) {
+        if (product.tags.includes(tag)) {
+          recommendedProducts.push(product);
+        }
+      }
+    }
+
+    res.status(200).json({
+      keyPhrases,
+      sentiment,
+      audioContent,
+      tags,
+      recommendedProducts,
+      mood,
     });
   } catch (error) {
     consola.error(error);
