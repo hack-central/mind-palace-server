@@ -6,52 +6,79 @@ const consola = require("consola");
 const path = require("path");
 
 router.post("/", async (req, res) => {
-  const { body, image } = req;
-  const keyFilename = path.join(__dirname, "/../keyfile.json");
-  const langClient = new language.LanguageServiceClient({ keyFilename });
-  const text2SpeechClient = new textToSpeech.TextToSpeechClient({
-    keyFilename,
-  });
-  const visionClient = new vision.ImageAnnotatorClient({ keyFilename });
+  const { body, file } = req;
 
-  const document = {
-    content: body.data,
-    type: "PLAIN_TEXT",
-  };
+  consola.info(body);
 
-  const [classification] = await langClient.classifyText({ document });
-  const [sentimentResult] = await langClient.analyzeSentiment({ document });
+  try {
+    const keyFilename = path.join(__dirname, "/../keyfile.json");
+    const langClient = new language.LanguageServiceClient({ keyFilename });
+    const text2SpeechClient = new textToSpeech.TextToSpeechClient({
+      keyFilename,
+    });
+    const visionClient = new vision.ImageAnnotatorClient({ keyFilename });
 
-  const sentiment = sentimentResult.documentSentiment;
-  const keyPhrases = [];
+    const document = {
+      content: body.data,
+      type: "PLAIN_TEXT",
+    };
 
-  consola.info(
-    `[*] Document received: ${JSON.stringify(classification.categories)}`
-  );
+    const [classification] = await langClient.classifyText({ document });
+    const [sentimentResult] = await langClient.analyzeSentiment({ document });
 
-  classification.categories.forEach((category) => {
-    keyPhrases.push(category.name);
-  });
+    const sentiment = sentimentResult.documentSentiment;
+    const keyPhrases = [];
 
-  const request = {
-    input: { text: body.data },
-    // Select the language and SSML voice gender (optional)
-    voice: { languageCode: "en-US", ssmlGender: "NEUTRAL" },
-    // select the type of audio encoding
-    audioConfig: { audioEncoding: "MP3" },
-  };
+    consola.info(
+      `[*] Document received: ${JSON.stringify(classification.categories)}`
+    );
 
-  const [audioResponse] = await text2SpeechClient.synthesizeSpeech(request);
-  const audioContent = audioResponse.audioContent;
+    classification.categories.forEach((category) => {
+      keyPhrases.push(category.name);
+    });
 
-  const [visionResponse] = await visionClient.faceDetection(image);
-  const faceInfo = visionResponse.faceAnnotations[0];
+    const request = {
+      input: { text: body.data },
+      // Select the language and SSML voice gender (optional)
+      voice: { languageCode: "en-US", ssmlGender: "NEUTRAL" },
+      // select the type of audio encoding
+      audioConfig: { audioEncoding: "MP3" },
+    };
 
-  consola.info(
-    `[*] FaceInfo received: ${JSON.stringify(faceInfo)}`
-  );
+    const [audioResponse] = await text2SpeechClient.synthesizeSpeech(request);
+    const audioContent = audioResponse.audioContent;
 
-  res.status(200).json({ keyPhrases, sentiment, audioContent, faceInfo });
+    const [visionResponse] = await visionClient.faceDetection(file.buffer);
+    const {
+      joyLikelihood,
+      sorrowLikelihood,
+      angerLikelihood,
+      headwearLikelihood,
+      surpriseLikelihood,
+      blurredLikelihood,
+    } = visionResponse.faceAnnotations[0];
+
+    consola.info(`[*] FaceInfo received: ${JSON.stringify(faceInfo)}`);
+
+    res
+      .status(200)
+      .json({
+        keyPhrases,
+        sentiment,
+        audioContent,
+        face: {
+          joyLikelihood,
+          sorrowLikelihood,
+          angerLikelihood,
+          headwearLikelihood,
+          surpriseLikelihood,
+          blurredLikelihood,
+        },
+      });
+  } catch (error) {
+    consola.error(error);
+    res.status(500).send("internal error occured");
+  }
 });
 
 module.exports = router;
